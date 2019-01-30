@@ -1,0 +1,130 @@
+---
+title: "210B Lab Report 3"
+author: "Anagha Uppal"
+date: "3/6/2018"
+output:
+  html_document:
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+### PART 1: 
+
+####Background
+    This lab is an introductory practical on spatial statistics topics. We were provided with a shapefile that represents California and related data, from which we selected the Riverside county. This dataset appears to be something like an extension of the "SmallHHFile" received earlier. Like the SmallHHFile, this file contains a variety of demographic and travel-related numerical, categorical, dichotomous and nominal information on households in an area. 
+    We use this data to estimate the travel habits of these households, specifically the number of miles driven alone by a driver of a household. The independent variables we will use are the location of the household (center, suburban, exurban, rural) combined with household size.
+        
+        
+####Model Overview
+Although we were directed to use a k-nearest neighbors method to create polygons, it resulted in a few errors in the construction of the correlogram and warninigs in the separated LM lag/error models. Therefore, we will use queen contiguity to create neighbors because there isn't a sizable difference between the two.
+
+
+
+
+```{r, message=FALSE}
+## Setting up and choosing libraries and importing data
+setwd("~/Desktop/Anagha/UCSB/Classes/GEOG 210B/hw3")
+library(spdep)
+library(maptools)
+library(leaflet)
+library(RColorBrewer)
+library(stargazer)
+```
+
+
+```{r data, message=FALSE}
+## Importing data
+CA.poly <- readShapePoly('LPA_Pop_Char_bg.shp')
+class(CA.poly)
+
+CA.poly@data$center = CA.poly@data$LPAgrp == 4
+CA.poly@data$suburb = CA.poly@data$LPAgrp == 3
+CA.poly@data$exurb = CA.poly@data$LPAgrp == 2
+CA.poly@data$rural = CA.poly@data$LPAgrp == 1
+CA.poly@data$none = CA.poly@data$LPAgrp == 0
+
+YCOUNTY <- CA.poly[CA.poly@data$countyname== c("Riverside"), ]
+```
+
+
+
+```{r dep_var}
+YCOUNTY@data$drvalpr =YCOUNTY@data$drvalM/YCOUNTY@data$n_pr #creating dependent variable
+YCOUNTY@data$drvalpr[is.na(YCOUNTY@data$drvalpr)] <-0 #replace resulting NAs with 0s
+```
+
+*********
+
+```{r lm}
+drvalOLS<-lm(drvalpr~suburb+exurb+rural+HHSIZE1+HHSIZE2+HHSIZE3+HHSIZE4+HHSIZE5+HHSIZE6+HHSIZE7, data=YCOUNTY@data) #creating linear model
+summary(drvalOLS)
+```
+
+This non-spatial OLS regression model is statistically significant according to the F-test, with a strong R squared value of 44% (multiple and adjusted are approximately equal). Most of the chosen variables are individually significant in explaining the dependent variable.
+
+
+```{r bptest}
+library(lmtest)
+library(sandwich)
+bptest(drvalOLS, studentize=TRUE)
+```
+
+The BP test value is greater than the critical value of the chi-squared test; therefore, the model is heteroskedastic.
+
+
+```{r qneighbors}
+#Creating the neighbors using queen contiguity
+IDs<-row.names(as(YCOUNTY, "data.frame"))
+coordsY<-coordinates(YCOUNTY)
+plot(YCOUNTY)
+list.queenY<-poly2nb(YCOUNTY, queen=T)
+plot(list.queenY, coordsY, add=T)
+summary (list.queenY)
+```
+
+Found an average of 6.3 links per observation
+
+```{r weights}
+queen_w <-nb2listw(list.queenY, style="W") 
+summary(queen_w)
+structure(queen_w)
+```
+
+
+```{r correl}
+mor10k <-sp.correlogram(list.queenY, var=YCOUNTY@data$drvalpr, order=10, method="I")
+plot(mor10k, main ="Moran's I with Queen Contiguity and Row Standardization")
+```
+
+The first lag is by far the highest. There is definitely some spatial autocorrelation.
+
+
+```{r lmtest}
+LM<-lm.LMtests(drvalOLS, queen_w, test="all")
+print(LM)
+```
+Here, LMerr points to possible spatial error correlation, LMlag also does the same.
+When we move to the robust linear error model, we see that RLMerr identifies the earlier results as spurious, but RLMlag points to spatial correlation
+SARMA points to possible spatial lag (Y depends on neighbors) and possible spatial error correlation (u depends on neighbors).
+Next we will create the individual spatial dependency models. If we were to use Anselin's flowchart, after looking at the results of the diagnostic LM test, we should focus on the spatial lag model, but for this report, we will examine all the models.
+
+
+```{r all_models}
+SpaLag <- lagsarlm(drvalpr~suburb+exurb+rural+HHSIZE1+HHSIZE2+HHSIZE3+HHSIZE4+HHSIZE5+HHSIZE6+HHSIZE7, data=YCOUNTY, queen_w)
+SpaErr<-errorsarlm(drvalpr~suburb+exurb+rural+HHSIZE1+HHSIZE2+HHSIZE3+HHSIZE4+HHSIZE5+HHSIZE6+HHSIZE7, data=YCOUNTY, queen_w)
+
+SpaLagMix <-lagsarlm(drvalpr~suburb+exurb+rural+HHSIZE1+HHSIZE2+HHSIZE3+HHSIZE4+HHSIZE5+HHSIZE6+HHSIZE7, data=YCOUNTY, queen_w, type="mixed")
+
+SARAR<-sacsarlm(drvalpr~suburb+exurb+rural+HHSIZE1+HHSIZE2+HHSIZE3+HHSIZE4+HHSIZE5+HHSIZE6+HHSIZE7, data=YCOUNTY, queen_w)
+SARARMix<-sacsarlm(drvalpr~suburb+exurb+rural+HHSIZE1+HHSIZE2+HHSIZE3+HHSIZE4+HHSIZE5+HHSIZE6+HHSIZE7, data=YCOUNTY, queen_w, type="sacmixed")
+impacts(SpaLag,listw=queen_w)
+```
+
+
+#####Discussion/Analysis
+
+For the spatial lag model, we see that the rho is significantly different from zero, so the Y for each block group is dependent on the Y of its neighbors. The location of the household is very significant, as is HHSize 7, i.e. households of size 7. For the spatial error model, lambda is also significantly different from zero, which means that the errors are also correlated, and the residual linear model results for the error may have been wrong. The same variables are significant, now with the addition of households size 1 and 2. Next we look at the mixed spatial lag model, where the rho is again significantly different from 0. Rho is slightly smaller than the spatial lag model (0.3924 to 0.36), which means that the X's may be spatially correlated.
+Finally, we check the SARAR and SARAR mixed models. The SARAR model concludes that Y is dependent on neighbor Y, but the errors of the Y are not correlated with the neighbor Ys, whereas the SARAR mixed models suggest that both are correlated. 
