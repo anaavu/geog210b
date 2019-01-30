@@ -1,0 +1,214 @@
+---
+title: "210B Lab Report 4"
+author: "Anagha Uppal"
+date: "3/20/2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r libsetup, echo=FALSE,warning=FALSE,message=FALSE,error=FALSE}
+setwd("~/Desktop/Anagha/UCSB/Classes/GEOG 210B/hw4")
+
+library(dplyr)  ## Data manipulation
+library(maps) ## Projections
+library(maptools) ## Data management
+library(sp) ## Data management
+library(spdep) ## Spatial autocorrelation
+library(gstat)        ## Geostatistics
+library(splancs)      ## Kernel Density
+library(spatstat)     ## Geostatistics
+library(RColorBrewer) ## Visualization
+library(classInt)     ## Class intervals
+library(spgwr)        ## GWR (not sure we need this for now)
+library(lattice)      ## Data visualization
+```
+
+```{r data_import, message=FALSE}
+my2k =readRDS('h2kb.rds')
+sp_point <-cbind(my2k$XCORD, my2k$YCORD)
+colnames(sp_point) <-c("LONG","LAT")
+proj <-CRS("+proj=utm +zone=10 +datum=WGS84")
+data.sp <-SpatialPointsDataFrame(coords=sp_point,my2k,proj4string=proj)
+bbox(data.sp)
+par(mar=c(2,2,0.2,0.2))
+plot(data.sp,pch=16, cex=.5, axes=T)
+
+SAMPLE1 <-sp_point[sample(100,replace=F),]
+SAMPLE2 <-sp_point[sample(500,replace=F),]
+summary(sp_point)
+summary(SAMPLE1)
+summary(SAMPLE2)
+```
+
+
+The samples look good. Nothing out of the ordinary.
+
+*****
+
+### PART 1: 
+
+For the purposes of comparison, I am conducting the directed analysis on the two samples as well as the whole dataset. Because the samples are subsets of the sp_point set, we do not expect that the results will be very different between the three, but there to be less granularity in the curves produced by the small samples.
+The g function, f function and k function test for clustering.
+
+```{r gEntire, message=FALSE}
+km2d <- function(km){
+  out <-(km/1.852)/60
+  return(out)
+}
+
+# Entire dataset
+u.x <-runif(n=nrow(sp_point), min=bbox(sp_point)[1,1], max=bbox(sp_point)[1,2])
+u.y <-runif(n=nrow(sp_point), min=bbox(sp_point)[2,1], max=bbox(sp_point)[2,2])
+r <-seq(0,km2d(10),length.out=10000)
+#G function
+env.u <-envelope(ppp(x=u.x,y=u.y,window=owin(bbox(sp_point)[1,],bbox(sp_point)[2,])), fun=Gest, r=r, nsim=99, nrank=2)
+plot(env.u)
+env <-envelope(ppp(x=sp_point[,1],y=sp_point[,2],window=owin(bbox(sp_point)[1,],bbox(sp_point)[2,])), fun=Gest, r=r, nsim=99, nrank=2)
+plot(env)
+
+#F
+Fenv.u <-envelope(ppp(x=u.x,y=u.y,window=owin(bbox(sp_point)[1,],bbox(sp_point)[2,])), fun=Fest, r=r, nsim=99, nrank=2)
+plot(Fenv.u)
+Fenv <-envelope(ppp(x=sp_point[,1],y=sp_point[,2],window=owin(bbox(sp_point)[1,],bbox(sp_point)[2,])), fun=Fest, r=r, nsim=99, nrank=2)
+summary(Fenv)
+plot(Fenv)
+#When the F values from our data are below the envelope of the Fs under Poisson we have clustering. This means that the empty space distances among points are longer than a Poisson process (i.e., uniformity). The opposite when the F values from the data are above the Poisson envelope means the empty space distances in our data are shorter thatn Poisson distances implying a regular pattern.
+#K function
+Kenv <-envelope(ppp(x=sp_point[,1],y=sp_point[,2],window=owin(bbox(sp_point)[1,],bbox(sp_point)[2,])), fun=Kest, r=r, nsim=99, nrank=2)
+plot(Kenv)
+```
+
+  For each D, the G function calculates the proportion of minimum event-to-nearest-event distances that are no greater than the distance cutoff. The G values from our data are above the randomization envelope. There is a rapid rise at short distances and a leveling off at larger Ds. Therefore, we have clustering in our data!
+
+  And because F values in our data are below the envelope of the Fs under Poisson, we have clustering. The proportion of minimum point-to-nearest-event distances is no greater than the distance cutoff. So the empty space distances among points are longer than a Poisson process would be, i.e. that the data is significantly different.
+  
+  K(d)is the sample cumulative distribution function (CDF) of all N2-N event-to-event distances. There are no bumps in the K curve, so the data may be uniformly distributed according to this test. The relative number of events at distance D would not change and cluster according to the distance.
+
+
+```{r gSAMPLE1, message=FALSE}
+#SAMPLE1
+u.x1 <-runif(n=nrow(SAMPLE1), min=bbox(SAMPLE1)[1,1], max=bbox(SAMPLE1)[1,2])
+u.y1 <-runif(n=nrow(SAMPLE1), min=bbox(SAMPLE1)[2,1], max=bbox(SAMPLE1)[2,2])
+#G function
+env.u1 <-envelope(ppp(x=u.x1,y=u.y1,window=owin(bbox(SAMPLE1)[1,],bbox(SAMPLE1)[2,])), fun=Gest, r=r, nsim=99, nrank=2)
+plot(env.u1)
+env1 <-envelope(ppp(x=SAMPLE1[,1],y=SAMPLE1[,2],window=owin(bbox(SAMPLE1)[1,],bbox(SAMPLE1)[2,])), fun=Gest, r=r, nsim=99, nrank=2)
+plot(env1)
+#F
+Fenv.u1 <-envelope(ppp(x=u.x1,y=u.y1,window=owin(bbox(SAMPLE1)[1,],bbox(SAMPLE1)[2,])), fun=Fest, r=r, nsim=99, nrank=2)
+plot(Fenv.u1)
+Fenv1 <-envelope(ppp(x=SAMPLE1[,1],y=SAMPLE1[,2],window=owin(bbox(SAMPLE1)[1,],bbox(SAMPLE1)[2,])), fun=Fest, r=r, nsim=99, nrank=2)
+plot(Fenv1)
+Kenv1 <-envelope(ppp(x=SAMPLE1[,1],y=SAMPLE1[,2],window=owin(bbox(SAMPLE1)[1,],bbox(SAMPLE1)[2,])), fun=Kest, r=r, nsim=99, nrank=2)
+plot(Kenv1)
+```
+
+As expected, these graphs are far less smooth because of the number of inputted points.
+As before, the G values from our data are above the randomization envelope, so we have clustering in our data.
+The F makes us less certain of our clustering conclusion. The data values fall within the envelope.
+There are many bumps in the K curve, but it is not known whether they are due to clustering in the data or dearth of data points with which this function was calculated.
+
+
+```{r gSAMPLE2, message=FALSE}
+#SAMPLE2
+u.x2 <-runif(n=nrow(SAMPLE2), min=bbox(SAMPLE2)[1,1], max=bbox(SAMPLE2)[1,2])
+u.y2 <-runif(n=nrow(SAMPLE2), min=bbox(SAMPLE2)[2,1], max=bbox(SAMPLE2)[2,2])
+#G function
+env.u2 <-envelope(ppp(x=u.x2,y=u.y2,window=owin(bbox(SAMPLE2)[1,],bbox(SAMPLE2)[2,])), fun=Gest, r=r, nsim=99, nrank=2)
+plot(env.u2)
+env2 <-envelope(ppp(x=SAMPLE2[,1],y=SAMPLE2[,2],window=owin(bbox(SAMPLE2)[1,],bbox(SAMPLE2)[2,])), fun=Gest, r=r, nsim=99, nrank=2)
+plot(env2)
+#F
+Fenv.u2 <-envelope(ppp(x=u.x2,y=u.y2,window=owin(bbox(SAMPLE2)[1,],bbox(SAMPLE2)[2,])), fun=Fest, r=r, nsim=99, nrank=2)
+plot(Fenv.u2)
+Fenv2 <-envelope(ppp(x=SAMPLE2[,1],y=SAMPLE2[,2],window=owin(bbox(SAMPLE2)[1,],bbox(SAMPLE2)[2,])), fun=Fest, r=r, nsim=99, nrank=2)
+plot(Fenv2)
+Kenv2 <-envelope(ppp(x=SAMPLE2[,1],y=SAMPLE2[,2],window=owin(bbox(SAMPLE2)[1,],bbox(SAMPLE2)[2,])), fun=Kest, r=r, nsim=99, nrank=2)
+plot(Kenv2)
+```
+
+The graphs become smoother here with a greater sample size.
+Again, the G values from our data are above the randomization envelope, so we have clustering in our data.
+Because F values in our data are below the envelope of the Fs under Poisson, we have clustering.
+The K curve looks to be smooth. The data according to this graph is uniform.
+
+********
+
+### PART 2: 
+
+I've chosen to use only the bw-dictated minimum mean squared error to create kernel densities. Having gone through a couple of bandwidth options, bw shows the clearest diversity of points - as expected, bw creates the optimized bandwidth
+
+```{r kernelEntire, message=FALSE}
+poly <- as.points(c(min(sp_point[,1]),max(sp_point[,1]),max(sp_point[,1]),min(sp_point[,1])),c(max(sp_point[,2]),max(sp_point[,2]),min(sp_point[,2]),min(sp_point[,2])))
+
+mserw <- mse2d(sp_point, poly=poly, nsmse=100, range=0.1)
+bw <- mserw$h[which.min(mserw$mse)] 
+
+sp_points <- SpatialPoints(coords=sp_point, proj4string=CRS("+proj=utm +zone=10 +datum=WGS84"))
+grd <- Sobj_SpatialGrid(sp_points,maxDim=100)$SG
+grd <- GridTopology(summary(grd)$grid[,1],cellsize=summary(grd)$grid[,2],cells.dim=summary(grd)$grid[,3])
+
+kernel1 <- spkernel2d(sp_points, poly=poly, h0=bw, grd=grd)
+
+CAdf <- data.frame(kernel1=kernel1)
+CAsg <- SpatialGridDataFrame(grd, data=CAdf)
+spplot(CAsg, main="California Event Location Bandwidth=0.041")
+
+```
+
+
+```{r kernelSAMPLE1, message=FALSE}
+poly1 <- as.points(c(min(SAMPLE1[,1]),max(SAMPLE1[,1]),max(SAMPLE1[,1]),min(SAMPLE1[,1])),c(max(SAMPLE1[,2]),max(SAMPLE1[,2]),min(SAMPLE1[,2]),min(SAMPLE1[,2])))
+
+mserw1 <- mse2d(SAMPLE1, poly=poly1, nsmse=100, range=0.1)
+bw1 <- mserw$h[which.min(mserw$mse)]
+
+SAMPLE1pts <- SpatialPoints(coords=SAMPLE1, proj4string=CRS("+proj=utm +zone=10 +datum=WGS84"))
+grd1 <- Sobj_SpatialGrid(SAMPLE1pts,maxDim=100)$SG
+grd1 <- GridTopology(summary(grd1)$grid[,1],cellsize=summary(grd1)$grid[,2],cells.dim=summary(grd1)$grid[,3])
+
+kernel2 <- spkernel2d(SAMPLE1, poly=poly1, h0=bw1, grd=grd1)
+
+
+CAdf2 <- data.frame(kernel2=kernel2)
+CAsg2 <- SpatialGridDataFrame(grd1, data=CAdf2)
+spplot(CAsg2, main="California Event Location Bandwidth=0.041")
+
+```
+
+
+```{r kernelSAMPLE2, message=FALSE}
+poly2 <- as.points(c(min(SAMPLE2[,1]),max(SAMPLE2[,1]),max(SAMPLE2[,1]),min(SAMPLE2[,1])),c(max(SAMPLE2[,2]),max(SAMPLE2[,2]),min(SAMPLE2[,2]),min(SAMPLE2[,2])))
+
+mserw2 <- mse2d(SAMPLE2, poly=poly2, nsmse=100, range=0.1)
+bw2 <- mserw$h[which.min(mserw$mse)] 
+
+SAMPLE2pts <- SpatialPoints(coords=SAMPLE2, proj4string=CRS("+proj=utm +zone=10 +datum=WGS84"))
+grd2 <- Sobj_SpatialGrid(SAMPLE2pts,maxDim=100)$SG
+grd2 <- GridTopology(summary(grd2)$grid[,1],cellsize=summary(grd2)$grid[,2],cells.dim=summary(grd2)$grid[,3])
+
+kernel3 <- spkernel2d(SAMPLE2, poly=poly2, h0=bw2, grd=grd2)
+
+CAdf3 <- data.frame(kernel3=kernel3)
+CAsg3 <- SpatialGridDataFrame(grd2, data=CAdf3)
+spplot(CAsg3, main="California Event Location Bandwidth=0.041")
+
+```
+
+    All the kernel densities are distributed on the California map, and there are two big clusters, one around San Francisco and one around Los Angeles. SAMPLE1 is too small to show this distribution. It detects clusters in all sorts of places. The second sample begins to come to the same conclusion as that of the whole dataset, with less granularity. The bandwidths were calculated to be the same for all three kernel density calculations.
+    
+    
+******** 
+    
+### PART 3: 
+
+The C and D matrices for semivariogram are built differently in Isaac and the class notes. Isaac and Srivastava method of semivariogram does not take into account anisotropy, i.e. co-variance does not take into account direction, while the notes provide options for both directional and omnidirectional semivariograms.
+Next one creates weights for kriging - I wish there had been a graph of the ordinary kriging weights for the samples in the class notes so that I could compare similarities and differences between those and their relation to the inputs.
+
+
+I'm really sorry this report was relatively very cursory! The last two weeks of the quarter have been very demanding, and I didn't manage my time well enough to devote sufficient energy towards this assignment.
+
